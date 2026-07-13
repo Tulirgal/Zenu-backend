@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "../ZenU-Frontend"
+		},
+		{
+			"path": "../ZenU-Backend"
+		},
+		{
+			"path": "."
+		}
+	],
+	"settings": {}
+}

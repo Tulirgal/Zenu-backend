@@ -1,0 +1,8 @@
+Use this prompt in an AI coding assistant with Supabase migration access:
+
+"Apply the SQL from `migrations/001_init_app_schema.sql` to the current Supabase project using `mcp_supabase_apply_migration`.
+Migration name: `init_app_schema`.
+After applying, verify with:
+- list tables in schema `app`
+- confirm RLS is enabled on `journal_entries`, `breathing_sessions`, `meditation_sessions`, `activity_logs`, `chat_conversations`, `chat_messages`, `pss_assessments`.
+Then return a concise status report."
