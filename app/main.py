@@ -19,16 +19,32 @@ from app.routers.status import router as status_router
 
 app = FastAPI(title="ZenU FastAPI Backend", version="0.2.0")
 
-allowed_origins = settings.frontend_origins or ["*"]
-dev_local_origin_regex = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$" if not settings.is_production else None
+import os
+
+ALLOWED_ORIGINS = [o.strip() for o in os.environ.get("FRONTEND_URL", "http://localhost:3000").split(",")]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_origin_regex=dev_local_origin_regex,
+    allow_origins=ALLOWED_ORIGINS,          # never use allow_origins=["*"] when credentials=True
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With", "Accept", "Origin"],
+    expose_headers=["Set-Cookie"],
+    max_age=600,
 )
+
+
+@app.options("/{rest_of_path:path}")
+async def preflight_handler(request: Request, rest_of_path: str):
+    return JSONResponse(
+        content={},
+        headers={
+            "Access-Control-Allow-Origin": request.headers.get("origin", "*"),
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, Accept, Origin",
+        },
+    )
 
 
 @app.exception_handler(AppError)
