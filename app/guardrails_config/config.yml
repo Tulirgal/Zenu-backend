@@ -1,0 +1,17 @@
+models:
+  - type: main
+    engine: openai
+    model: nvidia/nemotron-nano-8b-instruct
+    parameters:
+      base_url: "https://integrate.api.nvidia.com/v1"
+      api_key: $NVIDIA_NIM_API_KEY
+
+rails:
+  input:
+    flows:
+      - check crisis language
+      - check off topic request
+  output:
+    flows:
+      - check unsafe output
+      - check clinical advice

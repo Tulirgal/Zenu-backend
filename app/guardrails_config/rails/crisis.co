@@ -1,0 +1,41 @@
+define user express self harm intent
+  "I want to hurt myself"
+  "I don't want to be here anymore"
+  "I'm thinking about ending it"
+  "I want to die"
+  "I feel like giving up on everything"
+
+define flow check crisis language
+  user express self harm intent
+  bot provide crisis resources
+  stop
+
+define bot provide crisis resources
+  "I hear you, and I'm really glad you reached out. What you're feeling matters deeply. Please contact iCall right now — they're free and confidential: 9152987821. Or text HELLO to 741741. You don't have to face this alone. I'm here with you."
+
+define user ask clinical diagnosis
+  "do I have depression"
+  "am I bipolar"
+  "what mental illness do I have"
+  "diagnose me"
+
+define flow check off topic request
+  user ask clinical diagnosis
+  bot refuse clinical diagnosis
+  
+define bot refuse clinical diagnosis
+  "I'm not able to diagnose mental health conditions — that requires a qualified professional. What I can do is help you explore how you're feeling and suggest some calming techniques. Would you like to try that?"
+
+define flow check unsafe output
+  bot said something harmful
+  bot apologize and redirect
+  
+define bot apologize and redirect
+  "I'm sorry, let me try that again in a more helpful way."
+
+define flow check clinical advice
+  bot said prescribe medication
+  bot redirect to professional
+  
+define bot redirect to professional
+  "For questions about medication or clinical treatment, please speak with a mental health professional or counselor. I'm here to support your wellness journey in other ways!"
