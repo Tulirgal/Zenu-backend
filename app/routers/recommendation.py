@@ -1,13 +1,35 @@
-from __future__ import annotations
-
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
+from typing import List, Optional
+from app.dependencies import get_current_user, get_supabase
+from app.services.agentic.controller import AgenticController
 
-from app.core.dependencies import AuthContext, require_auth
-from app.services import recommendation_service
-
-router = APIRouter(tags=["recommendation"])
+router = APIRouter(prefix="/api/recommendations", tags=["recommendations"])
 
 
-@router.get("/api/recommendations/today")
-async def recommendations_today(auth: AuthContext = Depends(require_auth)):
-    return recommendation_service.get_recommendations(auth.user["id"])
+@router.get("/today")
+async def get_today_recommendations(
+    top_n: int = 3,
+    user=Depends(get_current_user),
+    sb=Depends(get_supabase),
+):
+    controller = AgenticController(supabase=sb, user_id=str(user.id))
+    return controller.get_recommendations(top_n=top_n)
+
+
+class FeedbackIn(BaseModel):
+    modules_accepted: List[str]
+
+
+@router.post("/{log_id}/feedback")
+async def submit_feedback(
+    log_id: str,
+    payload: FeedbackIn,
+    user=Depends(get_current_user),
+    sb=Depends(get_supabase),
+):
+    accepted = [{"module_id": mid} for mid in payload.modules_accepted]
+    sb.table("recommendation_log").update({
+        "modules_accepted": accepted
+    }).eq("id", log_id).eq("user_id", str(user.id)).execute()
+    return {"status": "ok"}

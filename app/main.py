@@ -16,6 +16,8 @@ from app.routers.journal import router as journal_router
 from app.routers.meditation import router as meditation_router
 from app.routers.recommendation import router as recommendation_router
 from app.routers.status import router as status_router
+from app.routers import signals
+from app.tasks.nightly_autoresearch import scheduler
 
 app = FastAPI(title="ZenU FastAPI Backend", version="0.2.0")
 
@@ -66,3 +68,12 @@ app.include_router(journal_router)
 app.include_router(gratitude_router)
 app.include_router(chat_router)
 app.include_router(recommendation_router)
+app.include_router(signals.router)
+
+@app.on_event("startup")
+async def startup_event():
+    scheduler.start()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    scheduler.shutdown(wait=False)
