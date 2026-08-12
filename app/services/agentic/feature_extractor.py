@@ -73,6 +73,7 @@ class FeatureExtractor:
             return 0.5
 
     def _preferred_time_slots(self) -> list:
+        IST = timezone(timedelta(hours=5, minutes=30))
         cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).isoformat()
         try:
             res = self.sb.table("engagement_events").select("occurred_at") \
@@ -80,9 +81,9 @@ class FeatureExtractor:
                 .gte("occurred_at", cutoff).execute()
             buckets: dict = {}
             for event in (res.data or []):
-                from datetime import timezone, timedelta
-                IST = timezone(timedelta(hours=5, minutes=30))
-                hour = datetime.fromisoformat(event["occurred_at"].replace("Z", "+00:00")).astimezone(IST).hour
+                hour = datetime.fromisoformat(
+                    event["occurred_at"].replace("Z", "+00:00")
+                ).astimezone(IST).hour
                 b = self._hour_to_bucket(hour)
                 buckets[b] = buckets.get(b, 0) + 1
             if not buckets:
@@ -104,7 +105,6 @@ class FeatureExtractor:
 
     @staticmethod
     def _time_of_day_bucket() -> str:
-        from datetime import timezone, timedelta
         IST = timezone(timedelta(hours=5, minutes=30))
         hour = datetime.now(IST).hour
         return FeatureExtractor._hour_to_bucket(hour)
