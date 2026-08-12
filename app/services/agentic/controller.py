@@ -45,7 +45,7 @@ class AgenticController:
 
     def _load_cached_features(self) -> dict | None:
         try:
-            res = self.sb.schema("public").table("user_feature_vectors").select("*") \
+            res = self.sb.table("user_feature_vectors").select("*") \
                 .eq("user_id", self.uid).limit(1).execute()
             if not res.data:
                 return None
@@ -73,7 +73,7 @@ class AgenticController:
     def _load_engagement_history(self) -> list:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
         try:
-            res = self.sb.schema("public").table("engagement_events") \
+            res = self.sb.table("engagement_events") \
                 .select("module_id, event_type, occurred_at") \
                 .eq("user_id", self.uid).gte("occurred_at", cutoff) \
                 .order("occurred_at", desc=True).execute()
@@ -94,7 +94,7 @@ class AgenticController:
 
     def _load_weight_overrides(self) -> dict:
         try:
-            res = self.sb.schema("public").table("module_weight_overrides") \
+            res = self.sb.table("module_weight_overrides") \
                 .select("module_id, weight_delta") \
                 .eq("user_id", self.uid).execute()
             return {r["module_id"]: r["weight_delta"] for r in (res.data or [])}
@@ -130,7 +130,7 @@ class AgenticController:
 
     def _log_recommendation(self, modules: list, features: dict):
         try:
-            self.sb.schema("public").table("recommendation_log").insert({
+            self.sb.table("recommendation_log").insert({
                 "user_id":        self.uid,
                 "modules_offered": modules,
                 "context_snapshot": {

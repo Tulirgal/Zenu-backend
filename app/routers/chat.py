@@ -53,7 +53,7 @@ async def send_message(
 
 def _get_journal_context(sb, user_id: str) -> str:
     try:
-        res = sb.schema("public").table("journal_entries").select("content, created_at") \
+        res = sb.table("journal_entries").select("content, created_at") \
             .eq("user_id", user_id) \
             .order("created_at", desc=True).limit(3).execute()
         if not res.data:
@@ -74,7 +74,7 @@ async def get_conversations(
     """
     try:
         # Try to fetch from chat_sessions table if it exists
-        res = sb.schema("public").table("chat_sessions") \
+        res = sb.table("chat_sessions") \
             .select("id, title, created_at, updated_at") \
             .eq("user_id", str(user.id)) \
             .order("updated_at", desc=True) \
@@ -95,7 +95,7 @@ async def create_conversation(
     sb=Depends(get_supabase),
 ):
     try:
-        res = sb.schema("public").table("chat_sessions").insert({
+        res = sb.table("chat_sessions").insert({
             "user_id": str(user.id),
             "title": payload.title,
         }).execute()
