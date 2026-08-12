@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import Optional
 from app.dependencies import get_current_user, get_supabase
+from app.core.supabase import app_db
 from app.services.llm.nim_client import call_seviyan, _is_off_topic, OFF_TOPIC_RESPONSES
 
 logger = logging.getLogger("zenu.chat")
@@ -41,7 +42,7 @@ async def get_conversations(
     sb=Depends(get_supabase),
 ):
     try:
-        res = sb.table("chat_sessions") \
+        res = app_db().table("chat_conversations") \
             .select("id, title, created_at, updated_at") \
             .eq("user_id", str(user.id)) \
             .order("updated_at", desc=True) \
@@ -60,7 +61,7 @@ async def create_conversation(
     sb=Depends(get_supabase),
 ):
     try:
-        res = sb.table("chat_sessions").insert({
+        res = app_db().table("chat_conversations").insert({
             "user_id": str(user.id),
             "title":   payload.title,
         }).execute()
@@ -78,7 +79,7 @@ async def get_messages(
     sb=Depends(get_supabase),
 ):
     try:
-        res = sb.table("chat_messages") \
+        res = app_db().table("chat_messages") \
             .select("id, role, content, created_at") \
             .eq("conversation_id", session_id) \
             .order("created_at", asc=True) \
@@ -97,7 +98,7 @@ async def delete_conversation(
     sb=Depends(get_supabase),
 ):
     try:
-        sb.table("chat_sessions") \
+        app_db().table("chat_conversations") \
             .delete() \
             .eq("id", session_id) \
             .eq("user_id", str(user.id)) \
@@ -132,7 +133,7 @@ async def send_message(
         history = []
         if payload.session_id:
             try:
-                hist_res = sb.table("chat_messages") \
+                hist_res = app_db().table("chat_messages") \
                     .select("role, content") \
                     .eq("conversation_id", payload.session_id) \
                     .order("created_at", asc=True) \
@@ -154,7 +155,7 @@ async def send_message(
         try:
             # Use first 40 chars of user message as title
             title = payload.message[:40] + ("..." if len(payload.message) > 40 else "")
-            sess_res = sb.table("chat_sessions").insert({
+            sess_res = app_db().table("chat_conversations").insert({
                 "user_id": uid,
                 "title":   title,
             }).execute()
@@ -166,12 +167,12 @@ async def send_message(
     # Save both messages to DB
     if session_id:
         try:
-            sb.table("chat_messages").insert([
+            app_db().table("chat_messages").insert([
                 {"conversation_id": session_id, "role": "user",      "content": payload.message},
                 {"conversation_id": session_id, "role": "assistant", "content": reply},
             ]).execute()
             # Update session updated_at
-            sb.table("chat_sessions").update({
+            app_db().table("chat_conversations").update({
                 "updated_at": "now()"
             }).eq("id", session_id).execute()
         except Exception as e:
@@ -186,7 +187,7 @@ async def send_message(
 
 def _get_journal_context(sb, user_id: str) -> str:
     try:
-        res = sb.table("journal_entries") \
+        res = app_db().table("journal_entries") \
             .select("content, created_at") \
             .eq("user_id", user_id) \
             .order("created_at", desc=True).limit(3).execute()
