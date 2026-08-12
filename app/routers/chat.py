@@ -41,7 +41,7 @@ async def get_conversations(
     sb=Depends(get_supabase),
 ):
     try:
-        res = sb.table("chat_conversations") \
+        res = sb.table("chat_sessions") \
             .select("id, title, created_at, updated_at") \
             .eq("user_id", str(user.id)) \
             .order("updated_at", desc=True) \
@@ -60,7 +60,7 @@ async def create_conversation(
     sb=Depends(get_supabase),
 ):
     try:
-        res = sb.table("chat_conversations").insert({
+        res = sb.table("chat_sessions").insert({
             "user_id": str(user.id),
             "title":   payload.title,
         }).execute()
@@ -97,7 +97,7 @@ async def delete_conversation(
     sb=Depends(get_supabase),
 ):
     try:
-        sb.table("chat_conversations") \
+        sb.table("chat_sessions") \
             .delete() \
             .eq("id", session_id) \
             .eq("user_id", str(user.id)) \
@@ -154,7 +154,7 @@ async def send_message(
         try:
             # Use first 40 chars of user message as title
             title = payload.message[:40] + ("..." if len(payload.message) > 40 else "")
-            sess_res = sb.table("chat_conversations").insert({
+            sess_res = sb.table("chat_sessions").insert({
                 "user_id": uid,
                 "title":   title,
             }).execute()
@@ -171,7 +171,7 @@ async def send_message(
                 {"conversation_id": session_id, "role": "assistant", "content": reply},
             ]).execute()
             # Update session updated_at
-            sb.table("chat_conversations").update({
+            sb.table("chat_sessions").update({
                 "updated_at": "now()"
             }).eq("id", session_id).execute()
         except Exception as e:
