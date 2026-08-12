@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Header, Request, Response
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 
 from app.core.dependencies import AuthContext, require_auth
 from app.core.security import map_user
@@ -18,6 +18,26 @@ async def sign_up(payload: SignUpInput, response: Response):
 @router.post("/api/auth/sign-in")
 async def sign_in(payload: SignInInput, response: Response):
     return auth_service.sign_in(payload, response)
+
+
+@router.get("/api/auth/google")
+async def google_oauth_start(request: Request, response: Response):
+    """Redirect into Google OAuth using ZenU's Google Cloud client."""
+    return auth_service.start_google_oauth(request, response)
+
+
+@router.get("/api/auth/callback")
+async def google_oauth_callback(
+    request: Request,
+    response: Response,
+    code: str | None = Query(default=None),
+    state: str | None = Query(default=None),
+    error: str | None = Query(default=None),
+    error_description: str | None = Query(default=None),
+):
+    """Google OAuth redirect URI — exchanges code and sets ZenU session cookies."""
+    err = error_description or error
+    return auth_service.complete_google_oauth(request, response, code, err, state)
 
 
 @router.post("/api/auth/refresh")
