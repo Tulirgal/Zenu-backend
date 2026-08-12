@@ -44,9 +44,6 @@ If a student mentions self-harm, suicide, or severe hopelessness — immediately
 - Vandrevala Foundation: 1860-2662-345 (24/7)
 - Text HELLO to 741741
 
-CONTEXT:
-You have access to this student's recent journal entries for personalisation. Use this context to make responses feel personal and remembered — but never quote journal entries directly back to the student word for word.
-
 Remember: You are a safe space. Every response should leave the student feeling heard, not judged."""
 
 OFF_TOPIC_PATTERNS = [
@@ -108,7 +105,7 @@ def call_seviyan(messages: list[dict], journal_context: str = "") -> str:
         client = get_nim_client()
         system = SEVIYAN_SYSTEM_PROMPT
         if journal_context:
-            system += f"\n\nThis student's recent journal context (use naturally, never quote directly):\n{journal_context}"
+            system += f"\n\nCONTEXT:\nYou have access to this student's recent journal entries for personalisation. Use this context to make responses feel personal and remembered — but never quote journal entries directly back to the student word for word.\n\nThis student's recent journal context:\n{journal_context}"
 
         full_messages = [{"role": "system", "content": system}] + messages
 
