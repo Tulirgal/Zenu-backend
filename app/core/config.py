@@ -28,10 +28,18 @@ class Settings:
     smtp_from_name: str = os.getenv("SMTP_FROM_NAME", "ZenU")
     smtp_use_tls: bool = os.getenv("SMTP_USE_TLS", "true").lower() in {"1", "true", "yes"}
     reset_password_url_base: str | None = os.getenv("RESET_PASSWORD_URL_BASE") or None
+    google_client_id: str | None = os.getenv("GOOGLE_CLIENT_ID") or None
+    google_client_secret: str | None = os.getenv("GOOGLE_CLIENT_SECRET") or None
+    # Optional explicit override. Default: {request.base_url}api/auth/callback
+    google_redirect_uri: str | None = os.getenv("GOOGLE_REDIRECT_URI") or None
 
     @property
     def is_production(self) -> bool:
         return self.node_env == "production"
+
+    @property
+    def google_oauth_configured(self) -> bool:
+        return bool(self.google_client_id and self.google_client_secret)
 
     @property
     def frontend_origins(self) -> list[str]:
