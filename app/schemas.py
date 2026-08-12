@@ -21,6 +21,10 @@ class RefreshInput(BaseModel):
     refreshToken: str | None = None
 
 
+class GoogleSessionInput(BaseModel):
+    ticket: str = Field(min_length=16, max_length=256)
+
+
 class ForgotPasswordInput(BaseModel):
     email: EmailStr
 

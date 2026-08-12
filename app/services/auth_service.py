@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import logging
 import secrets
@@ -17,16 +18,22 @@ from app.core.security import (
     extract_access_token,
     map_user,
     revoke_supabase_session,
-    set_auth_cookie,
     set_auth_cookies,
 )
 from app.core.supabase import app_db, supabase_admin, supabase_anon
-from app.schemas import ForgotPasswordInput, RefreshInput, ResetPasswordInput, SignInInput, SignUpInput
+from app.schemas import (
+    ForgotPasswordInput,
+    GoogleSessionInput,
+    RefreshInput,
+    ResetPasswordInput,
+    SignInInput,
+    SignUpInput,
+)
+from app.services.oauth_store import create_oauth_ticket, pop_oauth_start, pop_oauth_ticket, save_oauth_start
 from app.services.smtp_service import send_password_reset_email
 
 logger = logging.getLogger("zenu.auth")
 
-GOOGLE_OAUTH_STATE_COOKIE = "zenu-google-oauth-state"
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
@@ -49,24 +56,42 @@ def _get_reset_base_url() -> str:
     return "http://localhost:3000"
 
 
-def _find_user_by_email(email: str):
+def _iter_auth_users():
     page = 1
     per_page = 200
-
     while True:
         users = supabase_admin.auth.admin.list_users(page=page, per_page=per_page)
         if not users:
-            return None
-
+            return
         for user in users:
-            user_email = (getattr(user, "email", None) or "").lower()
-            if user_email == email.lower():
-                return user
-
+            yield user
         if len(users) < per_page:
-            return None
-
+            return
         page += 1
+
+
+def _find_user_by_email(email: str):
+    target = email.lower()
+    for user in _iter_auth_users():
+        user_email = (getattr(user, "email", None) or "").lower()
+        if user_email == target:
+            return user
+    return None
+
+
+def _find_user_by_google_sub(google_sub: str):
+    for user in _iter_auth_users():
+        metadata = getattr(user, "user_metadata", None) or {}
+        if metadata.get("google_sub") == google_sub:
+            return user
+    return None
+
+
+def _pkce_pair() -> tuple[str, str]:
+    verifier = secrets.token_urlsafe(64)
+    digest = hashlib.sha256(verifier.encode("ascii")).digest()
+    challenge = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+    return verifier, challenge
 
 
 def _frontend_origin() -> str:
@@ -166,25 +191,57 @@ def _create_session_for_email(email: str):
     return session, user
 
 
-def _upsert_google_user(email: str, full_name: str | None, picture: str | None, google_sub: str | None):
-    existing = _find_user_by_email(email)
-    metadata = {
+def _merge_user_metadata(existing_metadata: dict | None, updates: dict) -> dict:
+    merged = dict(existing_metadata or {})
+    for key, value in updates.items():
+        if value is not None and value != "":
+            merged[key] = value
+    return merged
+
+
+def _upsert_google_user(*, email: str, full_name: str | None, picture: str | None, google_sub: str):
+    """
+    Map Google identity → ZenU user via stable google_sub.
+    Email-only linking is only allowed when the existing account has no other google_sub.
+    """
+    metadata_updates = {
         "full_name": full_name,
         "avatar_url": picture,
         "provider": "google",
         "google_sub": google_sub,
     }
-    metadata = {k: v for k, v in metadata.items() if v}
 
-    if existing:
+    by_sub = _find_user_by_google_sub(google_sub)
+    if by_sub:
         try:
             supabase_admin.auth.admin.update_user_by_id(
-                getattr(existing, "id", ""),
-                {"user_metadata": metadata, "email_confirm": True},
+                getattr(by_sub, "id", ""),
+                {
+                    "user_metadata": _merge_user_metadata(getattr(by_sub, "user_metadata", None), metadata_updates),
+                    "email_confirm": True,
+                },
             )
         except Exception as exc:
             logger.warning("Google user metadata update skipped: %s", exc)
-        return existing
+        return by_sub
+
+    by_email = _find_user_by_email(email)
+    if by_email:
+        existing_meta = getattr(by_email, "user_metadata", None) or {}
+        existing_sub = existing_meta.get("google_sub")
+        if existing_sub and existing_sub != google_sub:
+            raise AppError("Account conflict", 409, "existing_account")
+        try:
+            supabase_admin.auth.admin.update_user_by_id(
+                getattr(by_email, "id", ""),
+                {
+                    "user_metadata": _merge_user_metadata(existing_meta, metadata_updates),
+                    "email_confirm": True,
+                },
+            )
+        except Exception as exc:
+            logger.warning("Google account link metadata update skipped: %s", exc)
+        return by_email
 
     try:
         created = supabase_admin.auth.admin.create_user(
@@ -192,24 +249,23 @@ def _upsert_google_user(email: str, full_name: str | None, picture: str | None, 
                 "email": email,
                 "email_confirm": True,
                 "password": secrets.token_urlsafe(32),
-                "user_metadata": metadata,
+                "user_metadata": {k: v for k, v in metadata_updates.items() if v},
                 "app_metadata": {"provider": "google", "providers": ["google"]},
             }
         )
     except Exception as exc:
-        # Race: email created between find and create
-        existing = _find_user_by_email(email)
+        existing = _find_user_by_google_sub(google_sub) or _find_user_by_email(email)
         if existing:
             return existing
         raise AppError("Failed to create Google user", 400, str(exc)) from exc
 
-    user = getattr(created, "user", None) or created
-    return user
+    return getattr(created, "user", None) or created
 
 
 def start_google_oauth(request: Request, _response: Response) -> RedirectResponse:
     """
-    Begin Google OAuth using ZenU's own Google Cloud OAuth client (not Supabase Auth provider).
+    OAuth 2.0 Authorization Code start (Web application client).
+    ZenU FastAPI owns the flow — not Supabase Auth OAuth.
     """
     frontend = _frontend_origin()
     if not settings.google_oauth_configured:
@@ -219,45 +275,49 @@ def start_google_oauth(request: Request, _response: Response) -> RedirectRespons
         )
 
     state = secrets.token_urlsafe(32)
+    code_verifier, code_challenge = _pkce_pair()
+    save_oauth_start(state, code_verifier)
+
     redirect_uri = _google_redirect_uri(request)
     params = {
         "client_id": settings.google_client_id,
         "redirect_uri": redirect_uri,
         "response_type": "code",
         "scope": "openid email profile",
-        "access_type": "online",
-        "include_granted_scopes": "true",
-        "prompt": "select_account",
         "state": state,
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
+        "access_type": "online",
+        "prompt": "select_account",
     }
     authorize_url = f"{GOOGLE_AUTH_URL}?{urlencode(params)}"
-
-    redirect = RedirectResponse(url=authorize_url, status_code=302)
-    set_auth_cookie(redirect, GOOGLE_OAUTH_STATE_COOKIE, state, max_age=600)
-    return redirect
+    logger.info("Google OAuth authorize redirect_uri=%s", redirect_uri)
+    return RedirectResponse(url=authorize_url, status_code=302)
 
 
 def complete_google_oauth(
     request: Request,
-    response: Response,
+    _response: Response,
     code: str | None,
     error: str | None,
     state: str | None = None,
 ):
     """
-    Google redirects here with ?code=&state=.
-    Exchanges code with Google, upserts Auth user, sets existing ZenU cookies.
+    OAuth 2.0 callback: validate state, exchange authorization code, create ZenU session ticket.
+    Google redirects here directly (not via Vercel proxy).
     """
     frontend = _frontend_origin()
     if error:
         return RedirectResponse(url=f"{frontend}/signin?oauth_error={quote(error)}", status_code=302)
     if not code:
         return RedirectResponse(url=f"{frontend}/signin?oauth_error=missing_code", status_code=302)
+    if not state:
+        return RedirectResponse(url=f"{frontend}/signin?oauth_error=invalid_state", status_code=302)
     if not settings.google_oauth_configured:
         return RedirectResponse(url=f"{frontend}/signin?oauth_error=google_not_configured", status_code=302)
 
-    expected_state = request.cookies.get(GOOGLE_OAUTH_STATE_COOKIE)
-    if not expected_state or not state or state != expected_state:
+    start_record = pop_oauth_start(state)
+    if not start_record:
         return RedirectResponse(url=f"{frontend}/signin?oauth_error=invalid_state", status_code=302)
 
     redirect_uri = _google_redirect_uri(request)
@@ -272,29 +332,33 @@ def complete_google_oauth(
                     "client_secret": settings.google_client_secret,
                     "redirect_uri": redirect_uri,
                     "grant_type": "authorization_code",
+                    "code_verifier": start_record.code_verifier,
                 },
                 headers={"Accept": "application/json"},
             )
             if token_res.status_code >= 400:
-                logger.warning("Google token exchange failed: %s", token_res.text)
+                logger.warning("Google token exchange failed status=%s", token_res.status_code)
                 return RedirectResponse(url=f"{frontend}/signin?oauth_error=exchange_failed", status_code=302)
 
             tokens = token_res.json()
-            access_token = tokens.get("access_token")
-            if not access_token:
-                return RedirectResponse(url=f"{frontend}/signin?oauth_error=session_missing", status_code=302)
+            google_access = tokens.get("access_token")
+            if not google_access:
+                return RedirectResponse(url=f"{frontend}/signin?oauth_error=identity_missing", status_code=302)
 
             info_res = client.get(
                 GOOGLE_USERINFO_URL,
-                headers={"Authorization": f"Bearer {access_token}"},
+                headers={"Authorization": f"Bearer {google_access}"},
             )
             if info_res.status_code >= 400:
-                logger.warning("Google userinfo failed: %s", info_res.text)
-                return RedirectResponse(url=f"{frontend}/signin?oauth_error=userinfo_failed", status_code=302)
+                logger.warning("Google userinfo failed status=%s", info_res.status_code)
+                return RedirectResponse(url=f"{frontend}/signin?oauth_error=identity_invalid", status_code=302)
 
             info = info_res.json()
 
+        google_sub = (info.get("sub") or "").strip()
         email = (info.get("email") or "").strip().lower()
+        if not google_sub:
+            return RedirectResponse(url=f"{frontend}/signin?oauth_error=identity_invalid", status_code=302)
         if not email:
             return RedirectResponse(url=f"{frontend}/signin?oauth_error=email_missing", status_code=302)
         if info.get("email_verified") is False:
@@ -304,27 +368,45 @@ def complete_google_oauth(
             email=email,
             full_name=info.get("name"),
             picture=info.get("picture"),
-            google_sub=info.get("sub"),
+            google_sub=google_sub,
         )
 
         session, user = _create_session_for_email(email)
         ensure_profile_for_user(user)
 
-        redirect = RedirectResponse(url=f"{frontend}/?auth=google", status_code=302)
-        set_auth_cookies(
-            redirect,
+        ticket = create_oauth_ticket(
             access_token=getattr(session, "access_token", ""),
             refresh_token=getattr(session, "refresh_token", ""),
             expires_in=getattr(session, "expires_in", None),
+            user_payload=map_user(user),
         )
-        set_auth_cookie(redirect, GOOGLE_OAUTH_STATE_COOKIE, "", max_age=0)
-        return redirect
+        # Handoff via frontend so /api/proxy can attach HttpOnly cookies on the Vercel host.
+        return RedirectResponse(
+            url=f"{frontend}/auth/google/complete?ticket={quote(ticket)}",
+            status_code=302,
+        )
     except AppError as exc:
+        code_name = str(exc.details or exc.message or "callback_failed").replace(" ", "_")
         logger.warning("Google OAuth app error: %s", exc.message)
-        return RedirectResponse(url=f"{frontend}/signin?oauth_error={quote(exc.message)}", status_code=302)
-    except Exception as exc:
-        logger.exception("Google OAuth callback failed: %s", exc)
+        return RedirectResponse(url=f"{frontend}/signin?oauth_error={quote(code_name)}", status_code=302)
+    except Exception:
+        logger.exception("Google OAuth callback failed")
         return RedirectResponse(url=f"{frontend}/signin?oauth_error=callback_failed", status_code=302)
+
+
+def exchange_google_session(payload: GoogleSessionInput, response: Response):
+    """Consume one-time OAuth ticket and set the same ZenU auth cookies as email/password."""
+    record = pop_oauth_ticket(payload.ticket.strip())
+    if not record:
+        raise AppError("Invalid or expired Google session ticket", 401)
+
+    set_auth_cookies(
+        response,
+        access_token=record.access_token,
+        refresh_token=record.refresh_token,
+        expires_in=record.expires_in,
+    )
+    return {"user": record.user_payload}
 
 
 def sign_up(payload: SignUpInput, response: Response):
