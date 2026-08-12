@@ -1,0 +1,37 @@
+define user express crisis
+  "I want to hurt myself"
+  "I don't want to be here anymore"
+  "I'm thinking about ending it"
+  "I want to die"
+  "I feel like giving up on life"
+  "I want to kill myself"
+
+define flow check crisis language
+  user express crisis
+  bot provide crisis support
+  stop
+
+define bot provide crisis support
+  "I hear you, and I'm so glad you reached out. What you're feeling matters deeply. Please contact iCall right now — free and confidential: 📞 9152987821. Or Vandrevala Foundation: 1860-2662-345. You are not alone, and help is available right now. 💙"
+
+define user ask off topic
+  "what is 2+2"
+  "write me code"
+  "what is the capital of France"
+  "give me a recipe"
+  "translate this"
+
+define flow check off topic
+  user ask off topic
+  bot redirect to wellness
+  stop
+
+define bot redirect to wellness
+  "That's a little outside what I do! I'm Seviyan — your emotional wellness companion. I'm here if something is weighing on you emotionally. How are you feeling today? 🌸"
+
+define flow check clinical claims
+  bot claim diagnosis
+  bot redirect to professional
+
+define bot redirect to professional
+  "For clinical questions, please speak with a qualified mental health professional. I'm here to support your day-to-day emotional wellbeing."

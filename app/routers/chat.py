@@ -1,9 +1,10 @@
+import os
 import logging
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from typing import Optional
 from app.dependencies import get_current_user, get_supabase
-from app.services.llm.nim_client import call_seviyan
+from app.services.llm.nim_client import call_seviyan, _is_off_topic
 
 logger = logging.getLogger("zenu.chat")
 router = APIRouter(prefix="/api/chat", tags=["chat"])
@@ -11,14 +12,15 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 CRISIS_PHRASES = [
     "hurt myself", "end it", "don't want to be here",
     "want to die", "kill myself", "give up on life",
-    "no reason to live", "better off dead"
+    "no reason to live", "better off dead", "end my life"
 ]
 
 CRISIS_RESPONSE = (
     "I hear you, and I'm really glad you reached out. "
-    "What you're feeling matters deeply. Please reach out to iCall right now — "
-    "they're free, confidential, and available: 📞 9152987821. "
-    "You can also text HELLO to 741741. You don't have to face this alone. 💙"
+    "What you're feeling matters deeply. Please contact iCall right now — "
+    "free and confidential: 📞 9152987821. "
+    "Or Vandrevala Foundation: 1860-2662-345 (available 24/7). "
+    "You are not alone. 💙"
 )
 
 
@@ -35,20 +37,36 @@ async def send_message(
 ):
     msg_lower = payload.message.lower()
 
-    # Crisis check — fast path before any LLM call
+    # Layer 1: Crisis detection — hard block, no LLM call
     if any(phrase in msg_lower for phrase in CRISIS_PHRASES):
-        return {"reply": CRISIS_RESPONSE, "safety_triggered": True}
+        return {
+            "reply": CRISIS_RESPONSE,
+            "safety_triggered": True,
+            "trigger_type": "crisis"
+        }
 
-    # Build message history
+    # Layer 2: Off-topic detection — soft redirect, no LLM call
+    if _is_off_topic(payload.message):
+        import random
+        from app.services.llm.nim_client import OFF_TOPIC_RESPONSES
+        return {
+            "reply": random.choice(OFF_TOPIC_RESPONSES),
+            "safety_triggered": True,
+            "trigger_type": "off_topic"
+        }
+
+    # Layer 3: NIM call with wellness system prompt
     messages = payload.conversation_history[-10:] + [
         {"role": "user", "content": payload.message}
     ]
-
-    # Get recent journal context for personalisation
     journal_context = _get_journal_context(sb, str(user.id))
-
     reply = call_seviyan(messages=messages, journal_context=journal_context)
-    return {"reply": reply, "safety_triggered": False}
+
+    return {
+        "reply": reply,
+        "safety_triggered": False,
+        "trigger_type": None
+    }
 
 
 def _get_journal_context(sb, user_id: str) -> str:
@@ -58,7 +76,9 @@ def _get_journal_context(sb, user_id: str) -> str:
             .order("created_at", desc=True).limit(3).execute()
         if not res.data:
             return ""
-        return " | ".join(r["content"][:120] for r in res.data if r.get("content"))
+        return " | ".join(
+            r["content"][:150] for r in res.data if r.get("content")
+        )
     except Exception:
         return ""
 
