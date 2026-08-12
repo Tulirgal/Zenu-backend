@@ -41,7 +41,7 @@ async def get_conversations(
     sb=Depends(get_supabase),
 ):
     try:
-        res = sb.table("chat_sessions") \
+        res = sb.table("chat_conversations") \
             .select("id, title, created_at, updated_at") \
             .eq("user_id", str(user.id)) \
             .order("updated_at", desc=True) \
@@ -60,7 +60,7 @@ async def create_conversation(
     sb=Depends(get_supabase),
 ):
     try:
-        res = sb.table("chat_sessions").insert({
+        res = sb.table("chat_conversations").insert({
             "user_id": str(user.id),
             "title":   payload.title,
         }).execute()
@@ -80,8 +80,7 @@ async def get_messages(
     try:
         res = sb.table("chat_messages") \
             .select("id, role, content, created_at") \
-            .eq("session_id", session_id) \
-            .eq("user_id", str(user.id)) \
+            .eq("conversation_id", session_id) \
             .order("created_at", asc=True) \
             .execute()
         return {"messages": res.data or []}
@@ -98,7 +97,7 @@ async def delete_conversation(
     sb=Depends(get_supabase),
 ):
     try:
-        sb.table("chat_sessions") \
+        sb.table("chat_conversations") \
             .delete() \
             .eq("id", session_id) \
             .eq("user_id", str(user.id)) \
@@ -135,8 +134,7 @@ async def send_message(
             try:
                 hist_res = sb.table("chat_messages") \
                     .select("role, content") \
-                    .eq("session_id", payload.session_id) \
-                    .eq("user_id", uid) \
+                    .eq("conversation_id", payload.session_id) \
                     .order("created_at", asc=True) \
                     .limit(20).execute()
                 history = [
@@ -156,7 +154,7 @@ async def send_message(
         try:
             # Use first 40 chars of user message as title
             title = payload.message[:40] + ("..." if len(payload.message) > 40 else "")
-            sess_res = sb.table("chat_sessions").insert({
+            sess_res = sb.table("chat_conversations").insert({
                 "user_id": uid,
                 "title":   title,
             }).execute()
@@ -169,11 +167,11 @@ async def send_message(
     if session_id:
         try:
             sb.table("chat_messages").insert([
-                {"session_id": session_id, "user_id": uid, "role": "user",      "content": payload.message},
-                {"session_id": session_id, "user_id": uid, "role": "assistant", "content": reply},
+                {"conversation_id": session_id, "role": "user",      "content": payload.message},
+                {"conversation_id": session_id, "role": "assistant", "content": reply},
             ]).execute()
             # Update session updated_at
-            sb.table("chat_sessions").update({
+            sb.table("chat_conversations").update({
                 "updated_at": "now()"
             }).eq("id", session_id).execute()
         except Exception as e:
