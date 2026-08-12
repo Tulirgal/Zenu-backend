@@ -35,80 +35,6 @@ class ConversationIn(BaseModel):
     title: Optional[str] = "New conversation"
 
 
-# ── GET conversations list ──────────────────────────────────────
-@router.get("/conversations")
-async def get_conversations(
-    user=Depends(get_current_user),
-    sb=Depends(get_supabase),
-):
-    try:
-        res = app_db().table("chat_conversations") \
-            .select("id, title, created_at, updated_at") \
-            .eq("user_id", str(user.id)) \
-            .order("updated_at", desc=True) \
-            .limit(20).execute()
-        return {"conversations": res.data or []}
-    except Exception as e:
-        logger.error(f"get_conversations error: {e}")
-        return {"conversations": []}
-
-
-# ── POST create new conversation ────────────────────────────────
-@router.post("/conversations")
-async def create_conversation(
-    payload: ConversationIn,
-    user=Depends(get_current_user),
-    sb=Depends(get_supabase),
-):
-    try:
-        res = app_db().table("chat_conversations").insert({
-            "user_id": str(user.id),
-            "title":   payload.title,
-        }).execute()
-        return {"conversation": res.data[0] if res.data else None}
-    except Exception as e:
-        logger.error(f"create_conversation error: {e}")
-        return {"conversation": None}
-
-
-# ── GET messages for a conversation ────────────────────────────
-@router.get("/conversations/{session_id}/messages")
-async def get_messages(
-    session_id: str,
-    user=Depends(get_current_user),
-    sb=Depends(get_supabase),
-):
-    try:
-        res = app_db().table("chat_messages") \
-            .select("id, role, content, created_at") \
-            .eq("conversation_id", session_id) \
-            .order("created_at", asc=True) \
-            .execute()
-        return {"messages": res.data or []}
-    except Exception as e:
-        logger.error(f"get_messages error: {e}")
-        return {"messages": []}
-
-
-# ── DELETE a conversation ───────────────────────────────────────
-@router.delete("/conversations/{session_id}")
-async def delete_conversation(
-    session_id: str,
-    user=Depends(get_current_user),
-    sb=Depends(get_supabase),
-):
-    try:
-        app_db().table("chat_conversations") \
-            .delete() \
-            .eq("id", session_id) \
-            .eq("user_id", str(user.id)) \
-            .execute()
-        return {"status": "ok"}
-    except Exception as e:
-        logger.error(f"delete_conversation error: {e}")
-        return {"status": "error"}
-
-
 # ── POST send a message ─────────────────────────────────────────
 @router.post("/message")
 async def send_message(
@@ -129,58 +55,12 @@ async def send_message(
         safety = True
     else:
         safety = False
-        # Load session history from DB for context
-        history = []
-        if payload.session_id:
-            try:
-                hist_res = app_db().table("chat_messages") \
-                    .select("role, content") \
-                    .eq("conversation_id", payload.session_id) \
-                    .order("created_at", asc=True) \
-                    .limit(20).execute()
-                history = [
-                    {"role": m["role"], "content": m["content"]}
-                    for m in (hist_res.data or [])
-                ]
-            except Exception:
-                history = []
-
-        messages = history + [{"role": "user", "content": payload.message}]
+        messages = payload.conversation_history[-10:] + [{"role": "user", "content": payload.message}]
         journal_context = _get_journal_context(sb, uid)
         reply = call_seviyan(messages=messages, journal_context=journal_context)
 
-    # Auto-create session if not provided
-    session_id = payload.session_id
-    if not session_id:
-        try:
-            # Use first 40 chars of user message as title
-            title = payload.message[:40] + ("..." if len(payload.message) > 40 else "")
-            sess_res = app_db().table("chat_conversations").insert({
-                "user_id": uid,
-                "title":   title,
-            }).execute()
-            if sess_res.data:
-                session_id = sess_res.data[0]["id"]
-        except Exception as e:
-            logger.error(f"Session create error: {e}")
-
-    # Save both messages to DB
-    if session_id:
-        try:
-            app_db().table("chat_messages").insert([
-                {"conversation_id": session_id, "role": "user",      "content": payload.message},
-                {"conversation_id": session_id, "role": "assistant", "content": reply},
-            ]).execute()
-            # Update session updated_at
-            app_db().table("chat_conversations").update({
-                "updated_at": "now()"
-            }).eq("id", session_id).execute()
-        except Exception as e:
-            logger.error(f"Message save error: {e}")
-
     return {
         "reply":           reply,
-        "session_id":      session_id,
         "safety_triggered": safety,
     }
 
