@@ -67,6 +67,20 @@ Set these env vars in `.env` (and in Render secrets):
 
 You can verify SMTP connection at `GET /api/status/smtp`.
 
+## Google OAuth 2.0 (Authorization Code)
+
+ZenU uses a **Web application** Google Cloud OAuth client owned by FastAPI — not Supabase Auth OAuth.
+
+Required env vars:
+
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `GOOGLE_REDIRECT_URI` (recommended in production), e.g. `https://zenu-backend-5dgz.onrender.com/api/auth/callback`
+
+Also set `FRONTEND_URL` to include the Vercel origin (e.g. `https://calming-you.vercel.app`) so post-login redirects land correctly.
+
+Flow: `GET /api/auth/google` → Google → `GET /api/auth/callback` → frontend ticket handoff → `POST /api/auth/google/session` (sets the same HttpOnly cookies as email/password).
+
 ## Compatibility notes
 
 - Response shape for authenticated user is kept as `{ "user": mapUser(...) }` for frontend compatibility.

@@ -4,7 +4,14 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response
 
 from app.core.dependencies import AuthContext, require_auth
 from app.core.security import map_user
-from app.schemas import ForgotPasswordInput, RefreshInput, ResetPasswordInput, SignInInput, SignUpInput
+from app.schemas import (
+    ForgotPasswordInput,
+    GoogleSessionInput,
+    RefreshInput,
+    ResetPasswordInput,
+    SignInInput,
+    SignUpInput,
+)
 from app.services import auth_service
 
 router = APIRouter(tags=["auth"])
@@ -22,7 +29,7 @@ async def sign_in(payload: SignInInput, response: Response):
 
 @router.get("/api/auth/google")
 async def google_oauth_start(request: Request, response: Response):
-    """Redirect into Google OAuth using ZenU's Google Cloud client."""
+    """OAuth 2.0 Authorization Code start → 302 to Google."""
     return auth_service.start_google_oauth(request, response)
 
 
@@ -35,9 +42,15 @@ async def google_oauth_callback(
     error: str | None = Query(default=None),
     error_description: str | None = Query(default=None),
 ):
-    """Google OAuth redirect URI — exchanges code and sets ZenU session cookies."""
+    """OAuth 2.0 callback: code exchange + ZenU session ticket (Google redirects here directly)."""
     err = error_description or error
     return auth_service.complete_google_oauth(request, response, code, err, state)
+
+
+@router.post("/api/auth/google/session")
+async def google_oauth_session(payload: GoogleSessionInput, response: Response):
+    """Exchange one-time OAuth ticket for the same HttpOnly ZenU auth cookies as email/password."""
+    return auth_service.exchange_google_session(payload, response)
 
 
 @router.post("/api/auth/refresh")
