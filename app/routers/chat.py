@@ -28,11 +28,7 @@ CRISIS_RESPONSE = (
 
 class ChatMessageIn(BaseModel):
     message: str
-    session_id: Optional[str] = None
-
-
-class ConversationIn(BaseModel):
-    title: Optional[str] = "New conversation"
+    conversation_history: list = []
 
 
 # ── POST send a message ─────────────────────────────────────────
