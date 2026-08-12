@@ -29,7 +29,7 @@ class FeatureExtractor:
     def _avg_mood_7d(self) -> float:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
         try:
-            res = self.sb.table("mood_logs").select("mood_score") \
+            res = self.sb.schema("public").table("mood_logs").select("mood_score") \
                 .eq("user_id", self.uid).gte("logged_at", cutoff).execute()
             scores = [r["mood_score"] for r in (res.data or [])]
             if not scores:
@@ -40,7 +40,7 @@ class FeatureExtractor:
 
     def _latest_pss_norm(self) -> float:
         try:
-            res = self.sb.table("pss_scores").select("raw_score") \
+            res = self.sb.schema("public").table("pss_scores").select("raw_score") \
                 .eq("user_id", self.uid).order("assessed_at", desc=True).limit(1).execute()
             if not res.data:
                 return 0.5
@@ -52,7 +52,7 @@ class FeatureExtractor:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
         try:
             # Try journal_entries table — adjust table name if different in your schema
-            res = self.sb.table("journal_entries").select("content") \
+            res = self.sb.schema("public").table("journal_entries").select("content") \
                 .eq("user_id", self.uid).gte("created_at", cutoff).limit(10).execute()
             texts = [r["content"] for r in (res.data or []) if r.get("content")]
             return ToneAnalyzer().dominant_tone(texts)
@@ -62,7 +62,7 @@ class FeatureExtractor:
     def _engagement_rate(self) -> float:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).isoformat()
         try:
-            res = self.sb.table("engagement_events").select("event_type") \
+            res = self.sb.schema("public").table("engagement_events").select("event_type") \
                 .eq("user_id", self.uid).gte("occurred_at", cutoff).execute()
             events = res.data or []
             if not events:
@@ -75,7 +75,7 @@ class FeatureExtractor:
     def _preferred_time_slots(self) -> list:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).isoformat()
         try:
-            res = self.sb.table("engagement_events").select("occurred_at") \
+            res = self.sb.schema("public").table("engagement_events").select("occurred_at") \
                 .eq("user_id", self.uid).eq("event_type", "completed") \
                 .gte("occurred_at", cutoff).execute()
             buckets: dict = {}
@@ -94,7 +94,7 @@ class FeatureExtractor:
 
     def _streak_days(self) -> int:
         try:
-            res = self.sb.table("user_feature_vectors").select("streak_days") \
+            res = self.sb.schema("public").table("user_feature_vectors").select("streak_days") \
                 .eq("user_id", self.uid).limit(1).execute()
             if res.data:
                 return res.data[0].get("streak_days", 0)

@@ -43,7 +43,7 @@ class AutoresearchLoop:
     def _get_active_user_ids(self) -> list:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
         try:
-            res = self.sb.table("engagement_events").select("user_id") \
+            res = self.sb.schema("public").table("engagement_events").select("user_id") \
                 .gte("occurred_at", cutoff).execute()
             return list({r["user_id"] for r in (res.data or [])})
         except Exception:
@@ -51,7 +51,7 @@ class AutoresearchLoop:
 
     def _refine_user(self, user_id: str):
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-        logs = self.sb.table("recommendation_log") \
+        logs = self.sb.schema("public").table("recommendation_log") \
             .select("modules_offered, modules_accepted") \
             .eq("user_id", user_id) \
             .gte("recommended_at", cutoff).execute().data or []
@@ -85,7 +85,7 @@ class AutoresearchLoop:
                 continue  # neutral band — no update
 
             try:
-                existing = self.sb.table("module_weight_overrides") \
+                existing = self.sb.schema("public").table("module_weight_overrides") \
                     .select("weight_delta, confidence") \
                     .eq("user_id", user_id).eq("module_id", mid) \
                     .limit(1).execute().data
@@ -98,7 +98,7 @@ class AutoresearchLoop:
             new_delta = max(-MAX_DELTA, min(MAX_DELTA, current_delta + gradient))
             new_conf  = min(current_conf + 0.04, 1.0)
 
-            self.sb.table("module_weight_overrides").upsert({
+            self.sb.schema("public").table("module_weight_overrides").upsert({
                 "user_id":      user_id,
                 "module_id":    mid,
                 "weight_delta": new_delta,
@@ -111,7 +111,7 @@ class AutoresearchLoop:
     def _refresh_feature_vector(self, user_id: str):
         from app.services.agentic.feature_extractor import FeatureExtractor
         features = FeatureExtractor(self.sb, user_id).extract()
-        self.sb.table("user_feature_vectors").upsert({
+        self.sb.schema("public").table("user_feature_vectors").upsert({
             "user_id":              user_id,
             "avg_mood_7d":          features["avg_mood_7d"],
             "pss_norm":             features["pss_norm"],

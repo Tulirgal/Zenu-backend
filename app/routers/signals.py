@@ -23,7 +23,7 @@ class EngagementEventIn(BaseModel):
 
 @router.post("/mood")
 async def log_mood(payload: MoodLogIn, user=Depends(get_current_user), sb=Depends(get_supabase)):
-    sb.table("mood_logs").insert({
+    sb.schema("public").table("mood_logs").insert({
         "user_id":    str(user.id),
         "mood_score": payload.mood_score,
         "note":       payload.note,
@@ -33,7 +33,7 @@ async def log_mood(payload: MoodLogIn, user=Depends(get_current_user), sb=Depend
 
 @router.post("/pss")
 async def log_pss(payload: PSSScoreIn, user=Depends(get_current_user), sb=Depends(get_supabase)):
-    sb.table("pss_scores").insert({
+    sb.schema("public").table("pss_scores").insert({
         "user_id":   str(user.id),
         "raw_score": payload.raw_score,
     }).execute()
@@ -42,7 +42,7 @@ async def log_pss(payload: PSSScoreIn, user=Depends(get_current_user), sb=Depend
 
 @router.post("/engagement")
 async def log_engagement(payload: EngagementEventIn, user=Depends(get_current_user), sb=Depends(get_supabase)):
-    sb.table("engagement_events").insert({
+    sb.schema("public").table("engagement_events").insert({
         "user_id":      str(user.id),
         "module_id":    payload.module_id,
         "event_type":   payload.event_type,

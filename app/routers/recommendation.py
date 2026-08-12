@@ -29,7 +29,7 @@ async def submit_feedback(
     sb=Depends(get_supabase),
 ):
     accepted = [{"module_id": mid} for mid in payload.modules_accepted]
-    sb.table("recommendation_log").update({
+    sb.schema("public").table("recommendation_log").update({
         "modules_accepted": accepted
     }).eq("id", log_id).eq("user_id", str(user.id)).execute()
     return {"status": "ok"}
