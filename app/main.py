@@ -69,6 +69,8 @@ app.include_router(gratitude_router)
 app.include_router(chat_router)
 app.include_router(recommendation_router)
 app.include_router(signals.router)
+from app.routers import healing_garden
+app.include_router(healing_garden.router)
 
 @app.on_event("startup")
 async def startup_event():
