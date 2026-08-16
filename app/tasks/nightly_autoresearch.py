@@ -8,6 +8,7 @@ scheduler = AsyncIOScheduler(timezone="UTC")
 @scheduler.scheduled_job("cron", hour=2, minute=0)
 def run_nightly_autoresearch():
     logger.info("Nightly Autoresearch job triggered.")
-    from app.dependencies import get_supabase_service_client
-    sb = get_supabase_service_client()
+    from app.dependencies import get_app_service_client
+    # Canonical recommendation data plane = app schema
+    sb = get_app_service_client()
     AutoresearchLoop(sb).run()
