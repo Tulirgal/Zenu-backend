@@ -29,9 +29,16 @@ class FeatureExtractor:
     def _avg_mood_7d(self) -> float:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
         try:
-            res = self.sb.table("mood_logs").select("mood_score") \
+            # app.mood_logs: prefer mood_score; fall back to intensity for older rows
+            res = self.sb.table("mood_logs").select("mood_score,intensity") \
                 .eq("user_id", self.uid).gte("logged_at", cutoff).execute()
-            scores = [r["mood_score"] for r in (res.data or [])]
+            scores = []
+            for r in (res.data or []):
+                val = r.get("mood_score")
+                if val is None:
+                    val = r.get("intensity")
+                if val is not None:
+                    scores.append(val)
             if not scores:
                 return 0.5
             return round((sum(scores) / len(scores) - 1) / 9.0, 4)

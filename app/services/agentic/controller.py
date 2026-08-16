@@ -1,12 +1,16 @@
 """
 Agentic Decision Controller — orchestrates the full recommendation pipeline:
   cached features → X-Algorithm ranking → post-filter → log → return
+
+Data plane: app schema (mood, PSS, engagement, feature vectors, overrides, logs).
+Scoring/ranking logic unchanged.
 """
 
 import logging
 from datetime import datetime, timedelta, timezone
 from supabase import Client
 from app.services.agentic.feature_extractor import FeatureExtractor
+from app.services.agentic.module_ids import resolve_canonical_module_id
 from app.services.agentic.x_algorithm import XAlgorithmRanker
 
 logger = logging.getLogger("zenu.controller")
@@ -31,17 +35,21 @@ class AgenticController:
         ranked   = ranker.rank(top_n=top_n * 2)
         filtered = self._post_filter(ranked, features, max_results=top_n)
 
-        self._log_recommendation(filtered, features)
+        log_id = self._log_recommendation(filtered, features)
 
-        return {
+        payload = {
             "recommendations": filtered,
             "context": {
                 "avg_mood_7d":   features.get("avg_mood_7d"),
                 "dominant_tone": features.get("dominant_tone"),
                 "time_of_day":   features.get("time_of_day"),
                 "stress_level":  self._stress_label(features.get("pss_norm", 0.5)),
-            }
+            },
         }
+        # Additive field for attribution; existing FE ignores unknown keys safely.
+        if log_id:
+            payload["log_id"] = log_id
+        return payload
 
     def _load_cached_features(self) -> dict | None:
         try:
@@ -79,13 +87,15 @@ class AgenticController:
                 .order("occurred_at", desc=True).execute()
             latest: dict = {}
             for event in (res.data or []):
-                mid = event["module_id"]
+                mid = resolve_canonical_module_id(self.sb, event["module_id"])
                 if mid not in latest:
-                    occ = datetime.fromisoformat(event["occurred_at"].replace("Z", "+00:00"))
+                    occ = datetime.fromisoformat(
+                        event["occurred_at"].replace("Z", "+00:00")
+                    )
                     days = (datetime.now(timezone.utc) - occ).total_seconds() / 86400
                     latest[mid] = {
-                        "module_id":      mid,
-                        "event_type":     event["event_type"],
+                        "module_id":       mid,
+                        "event_type":      event["event_type"],
                         "days_since_last": round(days, 2),
                     }
             return list(latest.values())
@@ -118,7 +128,6 @@ class AgenticController:
             result.append(module)
             seen_tags.add(primary)
 
-        # Fill if diversity filter was too aggressive
         if len(result) < max_results:
             for module in ranked:
                 if module not in result:
@@ -128,10 +137,10 @@ class AgenticController:
 
         return result
 
-    def _log_recommendation(self, modules: list, features: dict):
+    def _log_recommendation(self, modules: list, features: dict) -> str | None:
         try:
-            self.sb.table("recommendation_log").insert({
-                "user_id":        self.uid,
+            res = self.sb.table("recommendation_log").insert({
+                "user_id":         self.uid,
                 "modules_offered": modules,
                 "context_snapshot": {
                     "avg_mood_7d":   features.get("avg_mood_7d"),
@@ -140,8 +149,11 @@ class AgenticController:
                     "dominant_tone": features.get("dominant_tone"),
                 },
             }).execute()
+            if res.data:
+                return str(res.data[0]["id"])
         except Exception as e:
             logger.warning(f"Failed to log recommendation: {e}")
+        return None
 
     @staticmethod
     def _stress_label(pss_norm: float) -> str:
