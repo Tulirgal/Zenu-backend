@@ -12,4 +12,4 @@ jobs:
     steps:
       - name: Ping backend
         # Replace the URL below with your actual Render backend URL
-        run: curl -s https://zenu-backend.onrender.com/api/status > /dev/null
+        run: curl -s https://zenu-backend-5dgz.onrender.com/api/status > /dev/null
