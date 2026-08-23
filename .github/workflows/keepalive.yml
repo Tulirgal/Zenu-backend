@@ -1,0 +1,15 @@
+name: Keepalive
+
+on:
+  schedule:
+    # Runs every 5 minutes
+    - cron: "*/5 * * * *"
+  workflow_dispatch: # Allows manual trigger
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping backend
+        # Replace the URL below with your actual Render backend URL
+        run: curl -s https://zenu-backend.onrender.com/api/status > /dev/null
