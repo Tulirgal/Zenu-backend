@@ -574,3 +574,11 @@ def reset_password(payload: ResetPasswordInput):
     ).eq("id", token_row.get("id")).execute()
 
     return {"message": "Password reset successful."}
+
+
+def delete_account(user_id: str) -> None:
+    try:
+        supabase_admin.auth.admin.delete_user(user_id)
+    except Exception as e:
+        logger.error(f"Failed to delete user account {user_id}: {e}")
+        raise AppError(500, "Failed to permanently delete account.")

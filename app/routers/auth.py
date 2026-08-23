@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Header, Query, Request, Response
 
 from app.core.dependencies import AuthContext, require_auth
-from app.core.security import map_user
+from app.core.security import map_user, clear_auth_cookies
 from app.schemas import (
     ForgotPasswordInput,
     GoogleSessionInput,
@@ -92,4 +92,15 @@ async def api_logout(
     _: AuthContext = Depends(require_auth),
 ):
     await auth_service.sign_out(request, response, authorization)
+    return Response(status_code=204)
+
+
+@router.delete("/api/user", status_code=204)
+async def delete_user_account(
+    response: Response,
+    auth: AuthContext = Depends(require_auth)
+):
+    user_id = auth.user["id"]
+    auth_service.delete_account(user_id)
+    clear_auth_cookies(response)
     return Response(status_code=204)
