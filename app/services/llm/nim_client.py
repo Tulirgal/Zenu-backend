@@ -110,7 +110,7 @@ def call_seviyan(messages: list[dict], journal_context: str = "") -> str:
         full_messages = [{"role": "system", "content": system}] + messages
 
         response = client.chat.completions.create(
-            model="nvidia/llama-3.1-nemotron-70b-instruct",
+            model="nvidia/nemotron-4-340b-instruct",
             messages=full_messages,
             temperature=0.7,
             max_tokens=350,

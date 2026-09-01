@@ -1,7 +1,7 @@
 models:
   - type: main
     engine: openai
-    model: nvidia/llama-3.1-nemotron-70b-instruct
+    model: nvidia/nemotron-4-340b-instruct
     parameters:
       base_url: "https://integrate.api.nvidia.com/v1"
       api_key: $NVIDIA_NIM_API_KEY
