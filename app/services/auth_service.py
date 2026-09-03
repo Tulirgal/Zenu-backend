@@ -423,12 +423,12 @@ def sign_up(payload: SignUpInput, response: Response):
             }
         )
     except Exception as exc:
-        raise AppError("Failed to create user", 400, str(exc)) from exc
+        raise AppError(str(exc) or "Failed to create user", 400, str(exc)) from exc
 
     try:
         auth_result = supabase_anon.auth.sign_in_with_password({"email": payload.email, "password": payload.password})
     except Exception as exc:
-        raise AppError("Failed to create session after sign-up", 500, str(exc)) from exc
+        raise AppError(str(exc) or "Failed to create session after sign-up", 500, str(exc)) from exc
 
     session = getattr(auth_result, "session", None)
     user = getattr(auth_result, "user", None)
@@ -449,7 +449,7 @@ def sign_in(payload: SignInInput, response: Response):
     try:
         auth_result = supabase_anon.auth.sign_in_with_password({"email": payload.email, "password": payload.password})
     except Exception as exc:
-        raise AppError("Unauthorized", 401, str(exc)) from exc
+        raise AppError(str(exc) or "Unauthorized", 401, str(exc)) from exc
 
     session = getattr(auth_result, "session", None)
     user = getattr(auth_result, "user", None)
@@ -477,7 +477,7 @@ def refresh(payload: RefreshInput, request: Request, response: Response):
         except TypeError:
             auth_result = supabase_anon.auth.refresh_session({"refresh_token": token})
     except Exception as exc:
-        raise AppError("Unauthorized", 401, str(exc)) from exc
+        raise AppError(str(exc) or "Unauthorized", 401, str(exc)) from exc
 
     session = getattr(auth_result, "session", None)
     user = getattr(auth_result, "user", None)
