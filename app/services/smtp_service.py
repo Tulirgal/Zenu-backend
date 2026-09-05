@@ -62,11 +62,6 @@ def verify_smtp_connection() -> dict:
 
 
 def send_password_reset_email(to_email: str, reset_url: str):
-    msg = EmailMessage()
-    msg["Subject"] = "Reset your ZenU password"
-    msg["From"] = _build_sender()
-    msg["To"] = to_email
-
     text_body = (
         "We received a request to reset your ZenU password.\n\n"
         f"Reset your password: {reset_url}\n\n"
@@ -75,11 +70,11 @@ def send_password_reset_email(to_email: str, reset_url: str):
 
     html_body = f"""
     <html>
-      <body style=\"font-family: Arial, sans-serif; line-height: 1.6;\">
+      <body style="font-family: Arial, sans-serif; line-height: 1.6;">
         <h2>Reset your ZenU password</h2>
         <p>We received a request to reset your ZenU password.</p>
         <p>
-          <a href=\"{reset_url}\" style=\"display:inline-block;padding:10px 14px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;\">
+          <a href="{reset_url}" style="display:inline-block;padding:10px 14px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;">
             Reset Password
           </a>
         </p>
@@ -88,14 +83,71 @@ def send_password_reset_email(to_email: str, reset_url: str):
     </html>
     """.strip()
 
+    if settings.resend_api_key:
+        import httpx
+        from app.core.errors import AppError
+        
+        sender = settings.smtp_from_email if settings.smtp_from_email else "onboarding@resend.dev"
+        from_name = settings.smtp_from_name.strip() if settings.smtp_from_name else "ZenU"
+        
+        # Resend requires the domain to be verified. If it's not, you must use onboarding@resend.dev
+        if sender.endswith("@gmail.com"):
+            sender = "onboarding@resend.dev"
+            
+        from_address = f"{from_name} <{sender}>"
+        
+        try:
+            response = httpx.post(
+                "https://api.resend.com/emails",
+                headers={
+                    "Authorization": f"Bearer {settings.resend_api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "from": from_address,
+                    "to": [to_email],
+                    "subject": "Reset your ZenU password",
+                    "html": html_body,
+                    "text": text_body
+                },
+                timeout=10.0
+            )
+            response.raise_for_status()
+            return
+        except Exception as e:
+            error_details = response.text if 'response' in locals() else str(e)
+            raise AppError(status=500, message="Failed to send email via Resend API", details=error_details)
+    msg = EmailMessage()
+    msg["Subject"] = "Reset your ZenU password"
+    msg["From"] = _build_sender()
+    msg["To"] = to_email
+
+    # Fallback to SMTP if Resend is not configured
+
     msg.set_content(text_body)
     msg.add_alternative(html_body, subtype="html")
 
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=30) as server:
-        server.ehlo()
-        if settings.smtp_use_tls:
-            server.starttls(context=_tls_context())
+    try:
+        with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=30) as server:
             server.ehlo()
-        if settings.smtp_username:
-            server.login(settings.smtp_username, _smtp_login_password())
-        server.send_message(msg)
+            if settings.smtp_use_tls:
+                server.starttls(context=_tls_context())
+                server.ehlo()
+            if settings.smtp_username:
+                server.login(settings.smtp_username, _smtp_login_password())
+            server.send_message(msg)
+    except OSError as e:
+        # Railway and other PaaS often block outbound SMTP ports (587, 465, 25) on free/unverified tiers
+        from app.core.errors import AppError
+        raise AppError(
+            status=500,
+            message="Failed to connect to the email server. The hosting provider might be blocking outbound SMTP ports.",
+            details=str(e)
+        )
+    except Exception as e:
+        from app.core.errors import AppError
+        raise AppError(
+            status=500,
+            message="An error occurred while sending the password reset email.",
+            details=str(e)
+        )

@@ -32,6 +32,7 @@ class Settings:
     google_client_secret: str | None = os.getenv("GOOGLE_CLIENT_SECRET") or None
     # Optional explicit override. Default: {request.base_url}api/auth/callback
     google_redirect_uri: str | None = os.getenv("GOOGLE_REDIRECT_URI") or None
+    resend_api_key: str | None = os.getenv("RESEND_API_KEY") or None
 
     @property
     def is_production(self) -> bool:
